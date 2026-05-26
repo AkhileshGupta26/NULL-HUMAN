@@ -1,0 +1,28 @@
+# Python virtual environments & compiler files
+backend/venv/
+backend/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node dependencies, cache, and builds
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Local databases & secret credentials configurations
+backend/credentials.json
+db_fallback.json
+backend/db_fallback.json
+*.log
+
+# Autonomous sandbox environment
+git-sandbox/
+
+# System / IDE settings
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
