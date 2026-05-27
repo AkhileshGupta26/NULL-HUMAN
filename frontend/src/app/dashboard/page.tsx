@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 
 // Centralized API configuration supporting local development and production environment overrides
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api";
+let rawApiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api";
+if (rawApiBase && !rawApiBase.endsWith("/api") && !rawApiBase.endsWith("/api/")) {
+  const cleaned = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
+  rawApiBase = `${cleaned}/api`;
+}
+const API_BASE = rawApiBase;
 
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
