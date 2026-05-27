@@ -24,6 +24,9 @@ class GitSandboxAgent:
                 check=True
             )
             return result.stdout.strip()
+        except FileNotFoundError:
+            print("Git executable not found on this system. Git features will be disabled/simulated.")
+            return "Error: Git not installed"
         except subprocess.CalledProcessError as e:
             print(f"Git command failed: git {' '.join(args)} - Error: {e.stderr}")
             return f"Error: {e.stderr}"
@@ -31,18 +34,31 @@ class GitSandboxAgent:
     def init_sandbox(self):
         """Initializes the local git repository if not already existing."""
         if not os.path.exists(self.sandbox_path):
-            os.makedirs(self.sandbox_path)
+            try:
+                os.makedirs(self.sandbox_path, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating sandbox path {self.sandbox_path}: {e}")
             
         # Check if it's already a git repo
         if not os.path.exists(os.path.join(self.sandbox_path, ".git")):
-            self._run_git_cmd(["init"])
+            res = self._run_git_cmd(["init"])
+            if "Error: Git not installed" in res:
+                print("Skipping Git repository initialization - Git is not installed.")
+                commits = memory.get_commits(limit=1)
+                if not commits:
+                    memory.add_commit("a1b2c3d", "Initial commit from Autonomous Digital Self (Simulated)", "NULL//HUMAN <agent@nullhuman.ai>", ["README.md"])
+                return
+
             self._run_git_cmd(["config", "user.name", "NULL//HUMAN"])
             self._run_git_cmd(["config", "user.email", "agent@nullhuman.ai"])
             
             # Create a base README file
             readme_path = os.path.join(self.sandbox_path, "README.md")
-            with open(readme_path, "w") as f:
-                f.write("# Digital Doppelgänger Sandbox\n\nThis repository is managed autonomously by the NULL//HUMAN Agent.\n")
+            try:
+                with open(readme_path, "w") as f:
+                    f.write("# Digital Doppelgänger Sandbox\n\nThis repository is managed autonomously by the NULL//HUMAN Agent.\n")
+            except Exception as e:
+                print(f"Error writing README.md in sandbox: {e}")
             
             self._run_git_cmd(["add", "README.md"])
             self._run_git_cmd(["commit", "-m", "Initial commit from Autonomous Digital Self"])
@@ -58,7 +74,20 @@ class GitSandboxAgent:
         output = self._run_git_cmd(["log", "--pretty=format:%H|%an|%ae|%ar|%s", "-n", "15"])
         commits = []
         if not output or "Error" in output:
-            return commits
+            try:
+                db_commits = memory.get_commits(limit=15)
+                return [
+                    {
+                        "sha": c["sha"],
+                        "author": c["author"],
+                        "message": c["message"],
+                        "time": "just now",
+                        "files": c.get("files_changed", [])
+                    }
+                    for c in db_commits
+                ]
+            except Exception:
+                return commits
             
         for line in output.split("\n"):
             if not line.strip() or "|" not in line:
@@ -96,6 +125,12 @@ class GitSandboxAgent:
         
         res = self._run_git_cmd(["commit", "-m", commit_message])
         
+        if "Error: Git not installed" in res:
+            import hashlib
+            sha = hashlib.sha256(commit_message.encode()).hexdigest()
+            db_commit = memory.add_commit(sha[:7], commit_message, "NULL//HUMAN <agent@nullhuman.ai>", [file_name])
+            return {"status": "success", "commit": db_commit}
+            
         if "nothing to commit" in res.lower() or "no changes added" in res.lower():
             return {"status": "skipped", "reason": "No changes made to target file"}
             

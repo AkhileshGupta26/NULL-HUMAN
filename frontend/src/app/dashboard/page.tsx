@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [commits, setCommits] = useState<any[]>([]);
   const [issues, setIssues] = useState<any[]>([]);
   const [feeds, setFeeds] = useState<any>({ slack: [], email: [], linkedin: [], chat: [] });
+  const [isOffline, setIsOffline] = useState(false);
   
   // Connection states
   const [identityMode, setIdentityMode] = useState("sandbox");
@@ -162,6 +163,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE}/dashboard`);
       if (res.ok) {
+        setIsOffline(false);
         const data = await res.json();
         setActive(data.doppelganger_active);
         setPersonality(data.personality);
@@ -184,9 +186,12 @@ export default function Dashboard() {
           const updated = data.feeds.email.find((e: any) => e.id === selectedEmail.id);
           if (updated) setSelectedEmail(updated);
         }
+      } else {
+        setIsOffline(true);
       }
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
+      setIsOffline(true);
     }
   };
 
@@ -292,6 +297,21 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#030303] text-gray-200 flex flex-col p-4 md:p-6 select-none font-sans">
       
+      {/* Connection Offline Warning Banner */}
+      <AnimatePresence>
+        {isOffline && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="w-full bg-neon-red/10 border border-neon-red/30 p-3 rounded-xl mb-6 text-center text-xs font-mono text-neon-red uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(255,0,85,0.15)] animate-pulse"
+          >
+            <ShieldAlert className="w-4 h-4 text-neon-red" />
+            <span>[Connection offline]: Cannot communicate with replication backend at <span className="underline">{API_BASE}</span>. Verify backend deployment and env configs.</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Console Bar */}
       <header className="w-full flex flex-col md:flex-row justify-between items-center py-4 px-6 border border-neon-blue/20 bg-black/60 rounded-xl mb-6 gap-4 cyber-panel">
         <div className="flex items-center gap-3">
@@ -303,7 +323,7 @@ export default function Dashboard() {
               NULL//HUMAN REPLICATION ENGINE
             </h1>
             <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">
-              STATUS: ONLINE // SYNTHETIC SYNC RATIO: 99.1%
+              STATUS: {isOffline ? "OFFLINE" : "ONLINE"} // SYNTHETIC SYNC RATIO: {isOffline ? "0.0%" : "99.1%"}
             </p>
           </div>
         </div>
@@ -321,7 +341,7 @@ export default function Dashboard() {
           {/* Reset Demo */}
           <button
             onClick={handleResetDemo}
-            disabled={isResetting}
+            disabled={isResetting || isOffline}
             className="px-3.5 py-1.5 border border-neon-red/40 hover:border-neon-red bg-neon-red/5 hover:bg-neon-red/20 text-neon-red hover:shadow-[0_0_15px_rgba(255,0,85,0.25)] rounded text-xs uppercase tracking-wider font-semibold font-mono flex items-center gap-2 cursor-pointer transition-all duration-300 disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
@@ -331,7 +351,7 @@ export default function Dashboard() {
           {/* Force cycle tick */}
           <button
             onClick={handleForceTick}
-            disabled={isTicking}
+            disabled={isTicking || isOffline}
             className="px-3.5 py-1.5 border border-neon-purple/40 hover:border-neon-purple bg-neon-purple/5 hover:bg-neon-purple/20 text-neon-purple hover:shadow-[0_0_15px_rgba(189,0,255,0.25)] rounded text-xs uppercase tracking-wider font-semibold font-mono flex items-center gap-2 cursor-pointer transition-all duration-300 disabled:opacity-50"
           >
             <Sparkles className={`w-3.5 h-3.5 ${isTicking ? 'animate-spin' : ''}`} />
@@ -341,7 +361,8 @@ export default function Dashboard() {
           {/* Status Indicator / Activation Toggle */}
           <button
             onClick={toggleDoppelganger}
-            className={`px-5 py-1.5 rounded flex items-center gap-2 text-xs uppercase font-bold tracking-widest cursor-pointer border transition-all duration-300 ${
+            disabled={isOffline}
+            className={`px-5 py-1.5 rounded flex items-center gap-2 text-xs uppercase font-bold tracking-widest cursor-pointer border transition-all duration-300 disabled:opacity-50 ${
               active 
                 ? "border-neon-green bg-neon-green/10 text-neon-green shadow-[0_0_15px_rgba(57,255,20,0.3)] hover:bg-neon-green/20" 
                 : "border-gray-500 bg-gray-500/5 text-gray-400 hover:text-gray-300"
@@ -455,7 +476,7 @@ export default function Dashboard() {
               
               <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 font-mono text-[11px] scrollbar-thin">
                 {commits.length === 0 ? (
-                  <div className="text-gray-655 italic text-center py-12">// Waiting for coding ticks...</div>
+                  <div className="text-gray-655 italic text-center py-12">// Waiting for coding clicks...</div>
                 ) : (
                   commits.map((c: any, idx: number) => (
                     <div key={c.sha || idx} className="p-3 border border-neon-blue/15 bg-black/70 rounded-lg flex flex-col gap-1.5 hover:border-neon-blue/40 transition-all">
@@ -506,7 +527,7 @@ export default function Dashboard() {
                 />
                 <button
                   type="submit"
-                  disabled={isSubmittingIssue}
+                  disabled={isSubmittingIssue || isOffline}
                   className="w-full py-2 bg-neon-red/10 border border-neon-red/30 hover:border-neon-red hover:bg-neon-red/20 text-neon-red font-bold text-xs uppercase tracking-widest rounded transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingIssue ? "INJECTING..." : "INJECT GITLAB ISSUE"}
@@ -839,7 +860,7 @@ export default function Dashboard() {
                         )}
                       </div>
                     ) : (
-                      <div className="text-gray-600 italic text-xs justify-center items-center h-full flex font-mono">// Select email to inspect.</div>
+                      <div className="text-gray-655 italic text-xs justify-center items-center h-full flex font-mono">// Select email to inspect.</div>
                     )}
                   </div>
 
@@ -931,12 +952,12 @@ export default function Dashboard() {
                       placeholder="Ask the Doppelgänger anything (test for AI suspicion)..."
                       value={directChatMessage}
                       onChange={(e) => setDirectChatMessage(e.target.value)}
-                      disabled={isSendingChat}
+                      disabled={isSendingChat || isOffline}
                       className="flex-1 p-2 border border-neon-blue/10 bg-black/60 text-xs rounded focus:outline-none focus:border-neon-blue font-mono"
                     />
                     <button
                       type="submit"
-                      disabled={isSendingChat}
+                      disabled={isSendingChat || isOffline}
                       className="px-4 bg-neon-blue/15 border border-neon-blue/30 hover:border-neon-blue hover:bg-neon-blue/25 text-neon-blue rounded flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -1104,7 +1125,7 @@ export default function Dashboard() {
                     value={gitlabHost}
                     onChange={(e) => setGitlabHost(e.target.value)}
                     placeholder="gitlab.com"
-                    className="w-full p-2 border border-neon-blue/15 bg-black/85 text-xs rounded text-gray-200 focus:outline-none focus:border-neon-blue font-mono"
+                    className="w-full p-2 border border-neon-blue/15 bg-black/85 text-xs rounded text-gray-250 focus:outline-none focus:border-neon-blue font-mono"
                   />
                 </div>
 
@@ -1115,7 +1136,7 @@ export default function Dashboard() {
                     value={gitlabUsername}
                     onChange={(e) => setGitlabUsername(e.target.value)}
                     placeholder="username"
-                    className="w-full p-2 border border-neon-blue/15 bg-black/85 text-xs rounded text-gray-200 focus:outline-none focus:border-neon-blue font-mono"
+                    className="w-full p-2 border border-neon-blue/15 bg-black/85 text-xs rounded text-gray-250 focus:outline-none focus:border-neon-blue font-mono"
                   />
                 </div>
 
@@ -1126,7 +1147,7 @@ export default function Dashboard() {
                     value={gitlabRepo}
                     onChange={(e) => setGitlabRepo(e.target.value)}
                     placeholder="username/repository-slug"
-                    className="w-full p-2 border border-neon-blue/15 bg-black/85 text-xs rounded text-gray-200 focus:outline-none focus:border-neon-blue font-mono"
+                    className="w-full p-2 border border-neon-blue/15 bg-black/85 text-xs rounded text-gray-250 focus:outline-none focus:border-neon-blue font-mono"
                   />
                 </div>
 
@@ -1172,7 +1193,7 @@ export default function Dashboard() {
 
                 <button
                   type="submit"
-                  disabled={isSavingIdentity}
+                  disabled={isSavingIdentity || isOffline}
                   className="w-full mt-2 py-2.5 bg-neon-blue/15 border border-neon-blue/30 hover:border-neon-blue hover:bg-neon-blue/20 text-neon-blue font-bold text-xs uppercase tracking-widest rounded transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isSavingIdentity ? "SAVING..." : "SAVE CONNECTION DETAILS"}

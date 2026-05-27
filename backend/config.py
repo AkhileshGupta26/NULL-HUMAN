@@ -9,7 +9,31 @@ MONGODB_URI = os.getenv("MONGODB_URI", "")
 DB_NAME = os.getenv("DB_NAME", "dead_internet_agent")
 
 # Git Sandbox Settings
-SANDBOX_PATH = os.getenv("SANDBOX_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "git-sandbox"))
+default_sandbox = os.getenv("SANDBOX_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "git-sandbox"))
+sandbox_parent = os.path.dirname(default_sandbox)
+try:
+    if not os.path.exists(sandbox_parent):
+        os.makedirs(sandbox_parent, exist_ok=True)
+except Exception:
+    pass
+
+is_writable = False
+if os.path.exists(sandbox_parent) and os.access(sandbox_parent, os.W_OK):
+    try:
+        test_file = os.path.join(sandbox_parent, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        is_writable = True
+    except Exception:
+        is_writable = False
+
+if not is_writable:
+    import tempfile
+    SANDBOX_PATH = os.path.join(tempfile.gettempdir(), "git-sandbox")
+    print(f"Directory {sandbox_parent} not writable. Redirecting sandbox to writable temp path: {SANDBOX_PATH}")
+else:
+    SANDBOX_PATH = default_sandbox
 
 # Agent Orchestrator Settings
 RUN_INTERVAL_SECONDS = int(os.getenv("RUN_INTERVAL_SECONDS", "5"))

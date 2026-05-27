@@ -6,8 +6,39 @@ from backend import config
 
 class JSONFallbackDB:
     """A simple JSON-based database for fallback storage if MongoDB is not available."""
-    def __init__(self, filepath: str = "db_fallback.json"):
-        self.filepath = filepath
+    def __init__(self, filepath: str = None):
+        if filepath is None:
+            default_path = os.getenv("DATABASE_FALLBACK_PATH", os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "db_fallback.json"
+            ))
+            dir_name = os.path.dirname(default_path)
+            try:
+                if not os.path.exists(dir_name):
+                    os.makedirs(dir_name, exist_ok=True)
+            except Exception:
+                pass
+
+            is_writable = False
+            if os.path.exists(dir_name) and os.access(dir_name, os.W_OK):
+                try:
+                    test_file = os.path.join(dir_name, ".db_write_test")
+                    with open(test_file, "w") as f:
+                        f.write("test")
+                    os.remove(test_file)
+                    is_writable = True
+                except Exception:
+                    is_writable = False
+
+            if not is_writable:
+                import tempfile
+                self.filepath = os.path.join(tempfile.gettempdir(), "db_fallback.json")
+                print(f"Fallback DB directory {dir_name} not writable. Using temp directory: {self.filepath}")
+            else:
+                self.filepath = default_path
+        else:
+            self.filepath = filepath
+
         # Ensure fallback file exists and has correct structure
         if not os.path.exists(self.filepath):
             self.data = {
@@ -32,7 +63,10 @@ class JSONFallbackDB:
                 "agents": [
                     {"id": "main", "name": "Main Agent", "role": "Represents the user's primary identity", "status": "idle", "last_active": time.time()}
                 ],
-                "issues": []
+                "issues": [],
+                "settings": {
+                    "doppelganger_active": False
+                }
             }
             self._save()
         else:
@@ -53,9 +87,27 @@ class JSONFallbackDB:
                 for k, v in [("empathy", 60), ("urgency", 40), ("formality", 80), ("sarcasm", 20), ("typos", 20)]:
                     if k not in self.data["personality"]["sliders"]:
                         self.data["personality"]["sliders"][k] = v
+                # Ensure settings exist
+                if "settings" not in self.data:
+                    self.data["settings"] = {"doppelganger_active": False}
+                elif "doppelganger_active" not in self.data["settings"]:
+                    self.data["settings"]["doppelganger_active"] = False
                 self._save()
             except Exception:
-                self.data = {}
+                self.data = {
+                    "logs": [],
+                    "commits": [],
+                    "simulations": {"slack": [], "email": [], "linkedin": [], "chat": []},
+                    "personality": {
+                        "sliders": {"empathy": 60, "urgency": 40, "formality": 80, "sarcasm": 20, "typos": 20},
+                        "description": "Professional software engineer clone. Diligent, focused, and polite."
+                    },
+                    "agents": [
+                        {"id": "main", "name": "Main Agent", "role": "Represents the user's primary identity", "status": "idle", "last_active": time.time()}
+                    ],
+                    "issues": [],
+                    "settings": {"doppelganger_active": False}
+                }
                 self._save()
 
     def _save(self):
@@ -297,6 +349,9 @@ def clear_db():
             {"id": "main", "name": "Main Agent", "role": "Represents the user's primary identity", "status": "idle", "last_active": time.time()}
         ]
         fallback_db.data["issues"] = []
+        if "settings" not in fallback_db.data:
+            fallback_db.data["settings"] = {}
+        fallback_db.data["settings"]["doppelganger_active"] = False
         fallback_db._save()
     else:
         db.logs.delete_many({})
@@ -304,6 +359,11 @@ def clear_db():
         db.simulations.delete_many({})
         db.agents.delete_many({})
         db.agents.insert_one({"id": "main", "name": "Main Agent", "role": "Represents the user's primary identity", "status": "idle", "last_active": time.time()})
+        db.settings.update_one(
+            {"key": "doppelganger_active"},
+            {"$set": {"value": False}},
+            upsert=True
+        )
     
     global detection_risk, behavior_adaptation
     detection_risk = 12
@@ -326,4 +386,36 @@ def set_detection_state(risk: int = None, adaptation: bool = None):
         detection_risk = max(0, min(100, risk))
     if adaptation is not None:
         behavior_adaptation = adaptation
+
+def get_doppelganger_active() -> bool:
+    if use_fallback:
+        if "settings" not in fallback_db.data:
+            fallback_db.data["settings"] = {"doppelganger_active": False}
+            fallback_db._save()
+        return fallback_db.data["settings"].get("doppelganger_active", False)
+    else:
+        try:
+            doc = db.settings.find_one({"key": "doppelganger_active"})
+            if not doc:
+                db.settings.insert_one({"key": "doppelganger_active", "value": False})
+                return False
+            return doc.get("value", False)
+        except Exception:
+            return False
+
+def set_doppelganger_active(active: bool):
+    if use_fallback:
+        if "settings" not in fallback_db.data:
+            fallback_db.data["settings"] = {}
+        fallback_db.data["settings"]["doppelganger_active"] = active
+        fallback_db._save()
+    else:
+        try:
+            db.settings.update_one(
+                {"key": "doppelganger_active"},
+                {"$set": {"value": active}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Error updating doppelganger active in MongoDB settings: {e}")
 

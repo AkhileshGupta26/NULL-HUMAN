@@ -18,14 +18,14 @@ app = FastAPI(title="NULL//HUMAN API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Global variables for state
-doppelganger_active = False
 background_thread = None
+background_thread_lock = threading.Lock()
 orchestrator_engine = None
 
 class PersonalityUpdate(BaseModel):
@@ -47,18 +47,28 @@ class IssueCreate(BaseModel):
 class ChatInput(BaseModel):
     message: str
 
+def ensure_background_loop():
+    global background_thread
+    if memory.get_doppelganger_active():
+        with background_thread_lock:
+            if background_thread is None or not background_thread.is_alive():
+                print("Restoring background autonomous loop from persisted database state...")
+                background_thread = threading.Thread(target=autonomous_loop, daemon=True)
+                background_thread.start()
+
 @app.on_event("startup")
 def startup_event():
     global orchestrator_engine
     # Initialize components
     orchestrator_engine = orchestrator.DoppelgangerOrchestrator()
     simulations.seed_initial_data()
+    ensure_background_loop()
     print("NULL//HUMAN Backend started.")
 
 def autonomous_loop():
     """Background loop that runs when Doppelgänger mode is active."""
-    global doppelganger_active, orchestrator_engine
-    while doppelganger_active:
+    global orchestrator_engine
+    while memory.get_doppelganger_active():
         try:
             print("Autonomous tick cycle running...")
             orchestrator_engine.run_one_cycle()
@@ -68,35 +78,36 @@ def autonomous_loop():
 
 @app.get("/api/status")
 def get_status():
+    ensure_background_loop()
     return {
         "status": "online",
-        "doppelganger_active": doppelganger_active,
+        "doppelganger_active": memory.get_doppelganger_active(),
         "run_interval": config.RUN_INTERVAL_SECONDS
     }
 
 @app.post("/api/activate")
 def activate_doppelganger(background_tasks: BackgroundTasks):
-    global doppelganger_active, background_thread
-    if doppelganger_active:
+    global background_thread
+    if memory.get_doppelganger_active():
+        ensure_background_loop()
         return {"status": "already_active", "message": "Doppelgänger mode is already active."}
         
-    doppelganger_active = True
-    # Log activation
+    memory.set_doppelganger_active(True)
     memory.add_log("main", "Doppelgänger Mode ACTIVATED. Commencing offline hand-off.", "system")
     
-    # Start background loop
-    background_thread = threading.Thread(target=autonomous_loop, daemon=True)
-    background_thread.start()
+    with background_thread_lock:
+        if background_thread is None or not background_thread.is_alive():
+            background_thread = threading.Thread(target=autonomous_loop, daemon=True)
+            background_thread.start()
     
     return {"status": "activated", "message": "Autonomous Doppelgänger loop started."}
 
 @app.post("/api/deactivate")
 def deactivate_doppelganger():
-    global doppelganger_active
-    if not doppelganger_active:
+    if not memory.get_doppelganger_active():
         return {"status": "already_inactive", "message": "Doppelgänger mode is already inactive."}
         
-    doppelganger_active = False
+    memory.set_doppelganger_active(False)
     memory.add_log("main", "Doppelgänger Mode DEACTIVATED. Returning control to human.", "system")
     return {"status": "deactivated", "message": "Autonomous Doppelgänger loop stopped."}
 
@@ -116,8 +127,9 @@ def get_dashboard_data():
     if not orchestrator_engine:
         raise HTTPException(status_code=500, detail="Engine not ready")
         
+    ensure_background_loop()
     return {
-        "doppelganger_active": doppelganger_active,
+        "doppelganger_active": memory.get_doppelganger_active(),
         "personality": memory.get_personality(),
         "agents": memory.get_agents(),
         "logs": memory.get_logs(limit=40),
@@ -152,6 +164,9 @@ def update_identity(data: IdentityUpdate):
                 print("Gemini API re-configured successfully via Identity Control Center!")
             except Exception as e:
                 print(f"Failed to configure Gemini API: {e}")
+                orchestrator.gemini_available = False
+        else:
+            orchestrator.gemini_available = False
         
         memory.add_log("main", f"Identity Control Center settings updated: Mode={data.identity_mode}", "system")
         return {"status": "success", "message": "Identity configurations updated successfully."}
@@ -193,9 +208,9 @@ def handle_chat_message(chat: ChatInput):
 
 @app.post("/api/reset")
 def reset_demo():
-    global orchestrator_engine, doppelganger_active
+    global orchestrator_engine
     # Deactivate loop if active
-    doppelganger_active = False
+    memory.set_doppelganger_active(False)
     time.sleep(0.5) # allow loop to exit
     
     # Clear databases
@@ -215,4 +230,11 @@ def reset_demo():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host=config.HOST, port=config.PORT, reload=True)
+    # Dynamically select import path based on running directory
+    app_import = "main:app"
+    try:
+        if os.path.exists("backend") and os.path.isdir("backend"):
+            app_import = "backend.main:app"
+    except Exception:
+        pass
+    uvicorn.run(app_import, host=config.HOST, port=config.PORT, reload=True)
